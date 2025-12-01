@@ -1,29 +1,33 @@
+# Use a production-grade base image with PHP-FPM and Nginx
 FROM serversideup/php:8.3-fpm-nginx
 
+# Enable PHP OpCache for production optimization
 ENV PHP_OPCACHE_ENABLE=1
 
+# Switch to root user to install system dependencies
 USER root
 
-# Install Node.js
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+# Install Node.js and npm (if your Laravel project requires frontend asset compilation)
+RUN curl -sL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get update \
     && apt-get install -y nodejs \
-    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy application files
+# Copy your application code into the image
 COPY --chown=www-data:www-data . /var/www/html
 
-# Switch to non-root user
+# Switch back to the www-data user for security
 USER www-data
 
-# Install dependencies and build
-RUN npm ci \
-    && npm run build \
-    && rm -rf /var/www/html/.npm
+# Install Node.js dependencies and build frontend assets (if applicable)
+RUN npm install \
+    && npm run build
 
-# Install PHP dependencies
+# Install Composer dependencies, optimizing autoloader for production
 RUN composer install --no-interaction --optimize-autoloader --no-dev
 
-# Remove composer cache
-RUN rm -rf /var/www/html/.composer/cache
+# Expose the Nginx port (default is 80)
+EXPOSE 80
+
+# Define the default command to start the web server
+CMD ["php-fpm", "-F"]
