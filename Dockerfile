@@ -1,36 +1,29 @@
-# ================================
-# 1. Build Stage
-# ================================
-FROM php:8.2-fpm-alpine AS build
+FROM serversideup/php:8.3-fpm-nginx
 
-RUN apk add --no-cache git zip unzip libzip-dev oniguruma-dev \
-    && docker-php-ext-install pdo pdo_mysql mbstring zip
+ENV PHP_OPCACHE_ENABLE=1
 
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+USER root
 
-WORKDIR /var/www/html
-COPY . .
+# Install Node.js
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get update \
+    && apt-get install -y nodejs \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN composer install --no-dev --optimize-autoloader
+# Copy application files
+COPY --chown=www-data:www-data . /var/www/html
 
-RUN php artisan config:clear && \
-    php artisan route:clear && \
-    php artisan view:clear
+# Switch to non-root user
+USER www-data
 
+# Install dependencies and build
+RUN npm ci \
+    && npm run build \
+    && rm -rf /var/www/html/.npm
 
-# ================================
-# 2. Production Stage
-# ================================
-FROM nginx:alpine
+# Install PHP dependencies
+RUN composer install --no-interaction --optimize-autoloader --no-dev
 
-WORKDIR /var/www/html
-
-# Copy Laravel build
-COPY --from=build /var/www/html /var/www/html
-
-# Copy Nginx config
-COPY ./deploy/nginx.conf /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+# Remove composer cache
+RUN rm -rf /var/www/html/.composer/cache
