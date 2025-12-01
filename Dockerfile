@@ -1,40 +1,31 @@
-# -------------------------
-# 1) PHP Stage
-# -------------------------
-FROM php:8.3-fpm AS php-stage
+FROM php:8.3-fpm
 
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    unzip \
-    git \
-    curl \
-    libpng-dev \
-    libonig-dev \
-    libxml2-dev \
+    git curl zip unzip \
+    sqlite3 libsqlite3-dev \
+    libpng-dev libonig-dev libxml2-dev \
     libzip-dev \
-    zip \
-    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip
+    && docker-php-ext-install pdo_mysql pdo_sqlite mbstring zip exif pcntl
 
+# Install Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-WORKDIR /var/www
+# Set working directory
+WORKDIR /var/www/html
 
+# Copy project files
 COPY . .
 
+# Install dependencies
 RUN composer install --no-dev --optimize-autoloader
 
-RUN php artisan config:cache && php artisan route:cache && php artisan view:cache
+# Set permissions
+RUN chown -R www-data:www-data /var/www/html \
+    && chmod -R 775 storage bootstrap/cache
 
+# RUN php artisan migrate:fresh --seed
 
-# -------------------------
-# 2) Nginx Stage
-# -------------------------
-FROM nginx:alpine AS nginx-stage
+EXPOSE 8000
 
-COPY --from=php-stage /var/www /var/www
-COPY ./docker/nginx.conf /etc/nginx/conf.d/default.conf
-
-WORKDIR /var/www
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["php","artisan","serve","--host=0.0.0.0","--port=8000"]
