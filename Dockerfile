@@ -1,33 +1,40 @@
-# Use a production-grade base image with PHP-FPM and Nginx
-FROM serversideup/php:8.3-fpm-nginx
+# -------------------------
+# 1) PHP Stage
+# -------------------------
+FROM php:8.3-fpm AS php-stage
 
-# Enable PHP OpCache for production optimization
-ENV PHP_OPCACHE_ENABLE=1
+RUN apt-get update && apt-get install -y \
+    unzip \
+    git \
+    curl \
+    libpng-dev \
+    libonig-dev \
+    libxml2-dev \
+    libzip-dev \
+    zip \
+    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip
 
-# Switch to root user to install system dependencies
-USER root
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Install Node.js and npm (if your Laravel project requires frontend asset compilation)
-RUN curl -sL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get update \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
+WORKDIR /var/www
 
-# Copy your application code into the image
-COPY --chown=www-data:www-data . /var/www/html
+COPY . .
 
-# Switch back to the www-data user for security
-USER www-data
+RUN composer install --no-dev --optimize-autoloader
 
-# Install Node.js dependencies and build frontend assets (if applicable)
-RUN npm install \
-    && npm run build
+RUN php artisan config:cache && php artisan route:cache && php artisan view:cache
 
-# Install Composer dependencies, optimizing autoloader for production
-RUN composer install --no-interaction --optimize-autoloader --no-dev
 
-# Expose the Nginx port (default is 80)
+# -------------------------
+# 2) Nginx Stage
+# -------------------------
+FROM nginx:alpine AS nginx-stage
+
+COPY --from=php-stage /var/www /var/www
+COPY ./docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+WORKDIR /var/www
+
 EXPOSE 80
 
-# Define the default command to start the web server
-CMD ["php-fpm", "-F"]
+CMD ["nginx", "-g", "daemon off;"]
